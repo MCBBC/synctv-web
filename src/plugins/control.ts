@@ -1,4 +1,6 @@
 import Artplayer from "artplayer";
+import type Hls from "hls.js";
+import type { MediaPlayerClass } from "dashjs";
 
 // SVG icons
 const qualityIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" height="18">
@@ -28,10 +30,7 @@ interface QualityLevel {
 }
 
 interface AudioTrack {
-  id?: number;
   name?: string;
-  lang?: string;
-  language?: string;
 }
 
 interface MediaProvider {
@@ -48,7 +47,7 @@ interface MediaProvider {
 
 // Provider implementations
 class HLSProvider implements MediaProvider {
-  constructor(private hls: any) {}
+  constructor(private hls: Hls) {}
 
   getQualities() {
     return this.hls.levels || [];
@@ -86,18 +85,18 @@ class HLSProvider implements MediaProvider {
 }
 
 class DASHProvider implements MediaProvider {
-  constructor(private dash: any) {}
+  constructor(private dash: MediaPlayerClass) {}
 
   getQualities() {
-    return this.dash.getBitrateInfoListFor("video") || [];
+    return this.dash.getRepresentationsByType("video");
   }
 
   getCurrentQuality() {
-    return this.dash.getQualityFor("video");
+    return this.dash.getCurrentRepresentationForType("video")?.index || 0;
   }
 
   isAutoQuality() {
-    return this.dash.getSettings().streaming.abr.autoSwitchBitrate["video"];
+    return this.dash.getSettings().streaming?.abr?.autoSwitchBitrate?.video || false;
   }
 
   setQuality(level: number) {
@@ -105,7 +104,7 @@ class DASHProvider implements MediaProvider {
       this.setAutoQuality(true);
     } else {
       this.setAutoQuality(false);
-      this.dash.setQualityFor("video", level);
+      this.dash.setRepresentationForTypeByIndex("video", level);
     }
   }
 
@@ -122,18 +121,17 @@ class DASHProvider implements MediaProvider {
   }
 
   getAudioTracks() {
-    return this.dash.getTracksFor("audio") || [];
+    return this.dash.getTracksFor("audio").map((track) => ({
+      name: track.lang || track.id || undefined
+    }));
   }
 
   getCurrentAudioTrack() {
-    const current = this.dash.getCurrentTrackFor("audio");
-    const tracks = this.getAudioTracks();
-    return tracks.findIndex((track: any) => track === current);
+    return this.dash.getCurrentTrackFor("audio")?.index || 0;
   }
 
   setAudioTrack(trackId: number) {
-    const tracks = this.getAudioTracks();
-    this.dash.setCurrentTrack(tracks[trackId]);
+    this.dash.setCurrentTrack(this.dash.getTracksFor("audio")[trackId]);
   }
 }
 
@@ -198,7 +196,7 @@ export default function artplayerPluginMediaControl() {
       const title = "音轨";
 
       const getName = (track: AudioTrack) => {
-        return track.name || track.lang || track.language || "未知";
+        return track.name || "未知";
       };
 
       const currentTrack = provider.getCurrentAudioTrack();
